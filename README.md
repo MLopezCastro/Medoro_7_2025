@@ -161,3 +161,151 @@ Cantidad_Producida_Total = SUM(vista_MedoroResumen7_Final_2025[CantidadBuenosPro
 ---
 
 © Marcelo López Castro • Proyecto Medoro 7 • Julio 2025
+
+-------------------------
+
+**UPDATE: SE AGREGA FLAG Y SE MODIFICA LA VISTA RESUMEN:**
+
+# Proyecto MEDORO 7 – Optimización de Tiempos y Validación por Proceso (2025)
+
+## 🌐 Descripción General
+
+**Medoro 7** es la versión más completa y robusta del proyecto de análisis de tiempos de preparación y producción en planta. Reemplaza por completo las vistas anteriores utilizadas en Medoro 3, 4, 5 y 6, incorporando:
+
+* Corrección de fechas (-2 días por desfase).
+* Cálculos de horas discriminadas por tipo de estado.
+* Extracción de ID\_Limpio.
+* Incorporación de `saccod1` desde tabla vinculada.
+* Secuencia temporal (`Nro`).
+* **Nuevo**: `FlagPreparacion`, que permite identificar el primer bloque de preparación real.
+
+Todo esto está implementado en vistas SQL reutilizables, conectables directamente a Power BI.
+
+---
+
+## 🔧 Vistas SQL Principales
+
+### 1. `vista_ConCubo_Medoro7_Limpia`
+
+Base estructurada y corregida.
+
+```sql
+CREATE OR ALTER VIEW vista_ConCubo_Medoro7_Limpia AS
+SELECT
+    ID,
+    TRY_CAST(SUBSTRING(ID, PATINDEX('%[0-9]%', ID), LEN(ID)) AS INT) AS ID_Limpio,
+    Renglon,
+    Estado,
+    DATEADD(DAY, -2, TRY_CAST(Inicio AS DATETIME)) AS Inicio_Corregido,
+    DATEADD(DAY, -2, TRY_CAST(Fin AS DATETIME)) AS Fin_Corregido,
+    CONVERT(VARCHAR(16), DATEADD(DAY, -2, TRY_CAST(Inicio AS DATETIME)), 120) AS Inicio_Legible_Texto,
+    CONVERT(VARCHAR(16), DATEADD(DAY, -2, TRY_CAST(Fin AS DATETIME)), 120) AS Fin_Legible_Texto,
+    CONVERT(DATE, DATEADD(DAY, -2, TRY_CAST(Inicio AS DATETIME))) AS Fecha,
+    DATEDIFF(SECOND, TRY_CAST(Inicio AS DATETIME), TRY_CAST(Fin AS DATETIME)) / 3600.0 AS Total_Horas,
+    CASE WHEN Estado = 'Producción' THEN DATEDIFF(SECOND, TRY_CAST(Inicio AS DATETIME), TRY_CAST(Fin AS DATETIME)) / 3600.0 ELSE 0 END AS Horas_Produccion,
+    CASE WHEN Estado = 'Preparación' THEN DATEDIFF(SECOND, TRY_CAST(Inicio AS DATETIME), TRY_CAST(Fin AS DATETIME)) / 3600.0 ELSE 0 END AS Horas_Preparacion,
+    CASE WHEN Estado = 'Parada' THEN DATEDIFF(SECOND, TRY_CAST(Inicio AS DATETIME), TRY_CAST(Fin AS DATETIME)) / 3600.0 ELSE 0 END AS Horas_Parada,
+    CASE WHEN Estado = 'Mantenimiento' THEN DATEDIFF(SECOND, TRY_CAST(Inicio AS DATETIME), TRY_CAST(Fin AS DATETIME)) / 3600.0 ELSE 0 END AS Horas_Mantenimiento,
+    TRY_CAST(CantidadBuenosProducida AS FLOAT) AS CantidadBuenosProducida
+FROM ConCubo
+WHERE Renglon = 201
+  AND TRY_CAST(Inicio AS DATETIME) >= '2025-01-01'
+  AND TRY_CAST(Inicio AS DATETIME) < '2026-01-01'
+  AND ISNUMERIC(SUBSTRING(ID, PATINDEX('%[0-9]%', ID), LEN(ID))) = 1;
+```
+
+---
+
+### 2. `vista_MedoroResumen7_Final_ConFlagPrep`
+
+Vista final extendida, con todos los campos y `FlagPreparacion`.
+
+```sql
+CREATE OR ALTER VIEW vista_MedoroResumen7_Final_ConFlagPrep AS
+WITH Base AS (
+    SELECT
+        m.ID,
+        m.ID_Limpio,
+        m.Renglon,
+        m.Estado,
+        m.Inicio_Corregido,
+        m.Fin_Corregido,
+        m.Inicio_Legible_Texto,
+        m.Fin_Legible_Texto,
+        CONVERT(DATE, m.Inicio_Corregido) AS Fecha,
+        DATEDIFF(SECOND, m.Inicio_Corregido, m.Fin_Corregido) / 3600.0 AS Total_Horas,
+        CASE WHEN m.Estado = 'Producción' THEN DATEDIFF(SECOND, m.Inicio_Corregido, m.Fin_Corregido) / 3600.0 ELSE 0 END AS Horas_Produccion,
+        CASE WHEN m.Estado = 'Preparación' THEN DATEDIFF(SECOND, m.Inicio_Corregido, m.Fin_Corregido) / 3600.0 ELSE 0 END AS Horas_Preparacion,
+        CASE WHEN m.Estado = 'Maquina Parada' THEN DATEDIFF(SECOND, m.Inicio_Corregido, m.Fin_Corregido) / 3600.0 ELSE 0 END AS Horas_Parada,
+        CASE WHEN m.Estado = 'Mantenimiento' THEN DATEDIFF(SECOND, m.Inicio_Corregido, m.Fin_Corregido) / 3600.0 ELSE 0 END AS Horas_Mantenimiento,
+        m.CantidadBuenosProducida,
+        ROW_NUMBER() OVER (PARTITION BY m.ID_Limpio ORDER BY m.Inicio_Corregido ASC) AS Nro,
+        v.saccod1
+    FROM vista_ConCubo_Medoro7_Limpia AS m
+    LEFT JOIN TablaVinculadaUNION AS v
+        ON TRY_CAST(v.OP AS INT) = m.ID_Limpio
+    WHERE m.Renglon = 201 AND YEAR(m.Inicio_Corregido) = 2025
+),
+ConFlag AS (
+    SELECT *,
+        CASE
+            WHEN Estado = 'Preparación'
+            AND ROW_NUMBER() OVER (PARTITION BY ID_Limpio ORDER BY Inicio_Corregido) = 1
+            THEN 1 ELSE 0
+        END AS FlagPreparacion
+    FROM Base
+)
+SELECT * FROM ConFlag;
+```
+
+---
+
+## 📊 Medidas DAX en Power BI
+
+```DAX
+Horas_Preparacion_Total = SUM(vista_MedoroResumen7_Final_ConFlagPrep[Horas_Preparacion])
+Horas_Produccion_Total = SUM(vista_MedoroResumen7_Final_ConFlagPrep[Horas_Produccion])
+Horas_Parada_Total     = SUM(vista_MedoroResumen7_Final_ConFlagPrep[Horas_Parada])
+Horas_Mantenimiento_Total = SUM(vista_MedoroResumen7_Final_ConFlagPrep[Horas_Mantenimiento])
+Cantidad_Producida_Total = SUM(vista_MedoroResumen7_Final_ConFlagPrep[CantidadBuenosProducida])
+Porcentaje_Preparacion_Produccion =
+    DIVIDE([Horas_Preparacion_Total], [Horas_Produccion_Total], 0)
+```
+
+---
+
+## 🚧 Instalación para Planta / Programadores
+
+> “Usen `vista_MedoroResumen7_Final_ConFlagPrep` como origen directo para Power BI. Contiene todas las correcciones necesarias: fechas legibles, tiempos validados, cantidades, secuencia, `saccod1` y el nuevo `FlagPreparacion`.”
+
+* No hace falta tocar `ConCubo` ni `TablaVinculadaUNION`.
+* Esta vista es confiable, validada con el equipo técnico.
+
+---
+
+## 📊 Gráficos sugeridos en Power BI
+
+* ✨ Cards:
+
+  * Horas Preparación, Producción, Parada, Mantenimiento
+  * Cantidad Buenos Producida
+  * % Preparación/Producción
+
+* 📊 Barras apiladas por Fecha
+
+* 🌐 Visual temporal de secuencia (por `Nro`)
+
+* 📄 Tabla detallada por OT con `FlagPreparacion` y `saccod1`
+
+---
+
+## 🤖 Contacto
+
+Autor: Marcelo Fabián López
+Colaborador: ChatGPT (OpenAI)
+
+---
+
+📅 Fecha de cierre: Julio 2025
+🔧 Proyecto en evolución: futuras versiones incluirán validación cruzada con cantidades por hora y eficiencia comparada por `saccod1`.
+
