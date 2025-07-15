@@ -164,7 +164,7 @@ Cantidad_Producida_Total = SUM(vista_MedoroResumen7_Final_2025[CantidadBuenosPro
 
 -------------------------
 
-**UPDATE: SE AGREGA FLAG Y SE MODIFICA LA VISTA RESUMEN:**
+##**UPDATE: SE AGREGA FLAG Y SE MODIFICA LA VISTA RESUMEN:**##
 
 # Proyecto MEDORO 7 – Optimización de Tiempos y Validación por Proceso (2025)
 
