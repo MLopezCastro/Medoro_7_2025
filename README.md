@@ -309,3 +309,81 @@ Colaborador: ChatGPT (OpenAI)
 📅 Fecha de cierre: Julio 2025
 🔧 Proyecto en evolución: futuras versiones incluirán validación cruzada con cantidades por hora y eficiencia comparada por `saccod1`.
 
+----------------
+
+IMPORTANTE: MEJORÉ LA VISTA A USAR, TIENE FLAG PREPARACION:
+
+UPDATE:
+
+**README – Medoro 7 – Vista Final con Flag de Preparación**
+
+### 📌 Nombre de la vista principal (actualizada):
+`vista_MedoroResumen7_Final_ConFlagPrep`
+
+Esta vista es la **versión más completa y validada** para usar en Power BI, ya sea en el dashboard actual, para compartir con José, o en futuros desarrollos (como Medoro 8). Incluye toda la información necesaria para el análisis de eficiencia, con lógica depurada y validada.
+
+---
+
+### ✅ Contenido de la vista:
+Contiene una fila por cada bloque de tiempo registrado para `Renglon = 201` en el año 2025, ya corregido por desfase de fechas. Incluye:
+
+- `ID`, `ID_Limpio`, `Renglon`, `saccod1`
+- `Estado` (Producción, Preparación, Maquina Parada, Mantenimiento)
+- `Inicio_Corregido`, `Fin_Corregido` (tipo DATETIME)
+- `Inicio_Legible_Texto`, `Fin_Legible_Texto` (tipo TEXTO para evitar jerarquía en Power BI)
+- `Fecha` (solo fecha sin hora, útil para agrupaciones diarias)
+- **Tiempos por tipo de estado (en horas)**:
+  - `Total_Horas`
+  - `Horas_Produccion`
+  - `Horas_Preparacion`
+  - `Horas_Parada`
+  - `Horas_Mantenimiento`
+- `CantidadBuenosProducida`
+- `Nro` (número de orden cronológico dentro del mismo ID)
+- **`FlagPreparacionValida`**: indica si el bloque de preparación debe contabilizarse como una preparación real (ver lógica abajo)
+
+---
+
+### 🔁 Lógica del `FlagPreparacionValida`:
+El campo `FlagPreparacionValida` identifica **los bloques válidos de tipo 'Preparación'**. Se asigna valor **1 solo si se cumplen estas condiciones**:
+
+- Es el **primer evento de tipo 'Preparación'** de ese ID, o bien...
+- Es una **preparación posterior a un bloque de producción real**.
+
+Esto permite evitar la **duplicación de tiempo de preparación**, algo que sucedía en versiones anteriores.
+
+Se eliminan los falsos positivos (ej: bloques de preparación repetidos en la misma orden sin haber producido nada entre medio).
+
+---
+
+### 📌 Ventajas de esta vista:
+- Evita tener múltiples vistas o tablas intermedias.
+- Ya está validada con casos reales (ej. OT 14620).
+- Contiene todos los campos necesarios para:
+  - Calcular eficiencia (preparación / producción)
+  - Clasificar por colores
+  - Mostrar secuencias cronológicas
+  - Comparar producción real y paradas
+  - Generar visualizaciones por hora, día, semana
+  - Exportar para validación externa (ej. Excel para José)
+
+---
+
+### 🛠️ Recomendaciones para Power BI:
+- **Usar solo campos de esta vista** en cada visual.
+- **No combinar con columnas de otras vistas** (evita errores de sincronización).
+- Para análisis históricos, usar filtros de año y Renglon.
+
+---
+
+### 📤 Exportación:
+Si necesitás compartir el archivo `.pbix` con esta vista, asegurate de:
+- Cargar esta vista en modo **Import**.
+- Exportar los datos a Excel si el destinatario no tiene acceso a SQL Server.
+
+---
+
+Última validación: ✅ 2025-07-15
+Caso validado: OT `14620`, máquina `201`
+
+
