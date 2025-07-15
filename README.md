@@ -1,34 +1,39 @@
-# Proyecto MEDORO 7 – Optimización de Tiempos de Producción y Preparación (2025)
+## 📃 Proyecto: Medoro 7 – Análisis de Tiempos con Validación Real (2025)
 
-Este proyecto mejora drásticamente el análisis de eficiencia de producción en planta. A partir de datos sin estructura y registros duplicados, se logra generar vistas limpias, confiables y conectables directamente a Power BI.
+### 🌍 Contexto General
 
----
-
-## 🔄 Origen del problema
-
-* Las tablas `ConCubo` y `TablaVinculadaUNION` contenían datos con fechas mal registradas, IDs mezclados (texto y número), y sin posibilidad de distinguir secuencias de eventos dentro de una misma orden de trabajo (OT).
-* La planta no podía analizar correctamente los tiempos de preparación, producción, parada y mantenimiento.
-* Todo el análisis se hacía de forma manual en Excel.
+Este proyecto nace para resolver un problema crítico en la planta: los tiempos de preparación, producción, parada y mantenimiento estaban mal calculados, y los datos originales venían de tablas sucias, con desfases de fechas, IDs no normalizados y errores de estructura. Todo se validó contra registros manuales provistos por José.
 
 ---
 
-## 📁 Vistas creadas
+### 🔧 Objetivo
+
+Crear un modelo SQL robusto y reutilizable que:
+
+* Corrija el desfase de fechas.
+* Normalice los IDs (ID\_Limpio).
+* Separe los tiempos por tipo (producción, preparación, parada, mantenimiento).
+* Permita ver secuencias de eventos dentro de una misma OT.
+* Agregue el número de sacabocado (saccod1) desde la tabla `TablaVinculadaUNION`.
+* Sea 100% compatible con Power BI.
+
+---
+
+## 🔖 Estructura de Vistas SQL
 
 ### 1. `vista_ConCubo_Medoro7_Limpia`
 
-Esta es la base estructurada y corregida sobre la que se construye todo el análisis.
+Vista base que:
 
-**Qué hace:**
+* Parte de la tabla `ConCubo`.
+* Corrige fechas con `DATEADD(DAY, -2, ...)`.
+* Extrae `ID_Limpio` como versión numérica segura del campo `ID`.
+* Filtra por `Renglon = 201` y año 2025.
+* Convierte fechas a formato legible.
+* Calcula horas por tipo de estado.
+* Convierte `CantidadBuenosProducida` a `FLOAT`.
 
-* Usa `ConCubo` como origen.
-* Corrige fechas restando 2 días.
-* Convierte fechas a texto legible (evita jerarquías automáticas en Power BI).
-* Extrae `ID_Limpio` como versión numérica del `ID`.
-* Filtra por `Renglon = 201` y solo datos del año 2025.
-* Calcula duración total en horas y la separa por tipo de estado.
-* Convierte `CantidadBuenosProducida` a tipo numérico.
-
-**Código:**
+**Código**:
 
 ```sql
 CREATE OR ALTER VIEW vista_ConCubo_Medoro7_Limpia AS
@@ -50,23 +55,21 @@ SELECT
     TRY_CAST(CantidadBuenosProducida AS FLOAT) AS CantidadBuenosProducida
 FROM ConCubo
 WHERE
-    Renglon = 201
-    AND TRY_CAST(Inicio AS DATETIME) >= '2025-01-01'
-    AND TRY_CAST(Inicio AS DATETIME) < '2026-01-01'
-    AND ISNUMERIC(SUBSTRING(ID, PATINDEX('%[0-9]%', ID), LEN(ID))) = 1;
+    Renglon = 201 AND
+    TRY_CAST(Inicio AS DATETIME) >= '2025-01-01' AND
+    TRY_CAST(Inicio AS DATETIME) < '2026-01-01' AND
+    ISNUMERIC(SUBSTRING(ID, PATINDEX('%[0-9]%', ID), LEN(ID))) = 1;
 ```
 
 ---
 
 ### 2. `vista_MedoroResumen7_Final_2025`
 
-Esta es la vista final que integra todo:
+Vista final y lista para Power BI. Contiene:
 
-* Correcciones de fecha
-* Cálculos por tipo de estado
-* Cantidades producidas
-* Secuencia ordenada
-* Sacabocado (`saccod1`) desde `TablaVinculadaUNION`
+* Todo lo de la vista limpia anterior.
+* Secuencia (`ROW_NUMBER()` por ID).
+* El `saccod1` traído desde `TablaVinculadaUNION`, validado con `ISNUMERIC` para evitar errores.
 
 **Código:**
 
@@ -89,17 +92,17 @@ SELECT
     CASE WHEN m.Estado = 'Mantenimiento' THEN DATEDIFF(SECOND, m.Inicio_Corregido, m.Fin_Corregido) / 3600.0 ELSE 0 END AS Horas_Mantenimiento,
     m.CantidadBuenosProducida,
     ROW_NUMBER() OVER (PARTITION BY m.ID_Limpio ORDER BY m.Inicio_Corregido ASC) AS Nro,
-    v.saccod1
+    VU.saccod1
 FROM vista_ConCubo_Medoro7_Limpia AS m
-LEFT JOIN TablaVinculadaUNION AS v ON TRY_CAST(v.OP AS INT) = m.ID_Limpio
+LEFT JOIN TablaVinculadaUNION AS VU
+    ON ISNUMERIC(VU.OP) = 1 AND TRY_CAST(VU.OP AS INT) = m.ID_Limpio
 WHERE
-    m.Renglon = 201 AND
-    YEAR(m.Inicio_Corregido) = 2025;
+    m.Renglon = 201 AND YEAR(m.Inicio_Corregido) = 2025;
 ```
 
 ---
 
-## 📊 Medidas DAX sugeridas para Power BI
+## 📊 DAX para Power BI (medidas)
 
 ```DAX
 Horas_Produccion_Total = SUM(vista_MedoroResumen7_Final_2025[Horas_Produccion])
@@ -107,48 +110,54 @@ Horas_Preparacion_Total = SUM(vista_MedoroResumen7_Final_2025[Horas_Preparacion]
 Horas_Parada_Total = SUM(vista_MedoroResumen7_Final_2025[Horas_Parada])
 Horas_Mantenimiento_Total = SUM(vista_MedoroResumen7_Final_2025[Horas_Mantenimiento])
 Cantidad_Producida_Total = SUM(vista_MedoroResumen7_Final_2025[CantidadBuenosProducida])
+%Tiempo_Preparacion = DIVIDE([Horas_Preparacion_Total], [Horas_Produccion_Total] + [Horas_Parada_Total] + [Horas_Mantenimiento_Total] + [Horas_Preparacion_Total], 0)
 ```
 
 ---
 
-## 📈 Visuales sugeridos
+## 🛁 Instalación en la Planta
 
-* Tarjetas KPI con medidas anteriores
-* Gráfico de barras: `ID_Limpio` vs Horas por tipo
-* Gráfico de líneas: eficiencia diaria (por ejemplo, porcentaje de preparación)
-* Tabla detallada: secuencia por evento con tiempo y cantidad
+### 🧱 Lo que debe hacer el equipo de IT o programadores:
 
----
-
-## 🏢️ Instalación en planta
-
-1. Crear en SQL Server las dos vistas:
+1. **Ejecutar las vistas** en el entorno SQL Server de producción:
 
    * `vista_ConCubo_Medoro7_Limpia`
    * `vista_MedoroResumen7_Final_2025`
 
-2. En Power BI:
+2. **Verificar que Power BI se conecte a:** `vista_MedoroResumen7_Final_2025`
 
-   * Conectar directo a `vista_MedoroResumen7_Final_2025`
-   * Crear medidas y visuales como se detalló
+3. **Revisar que el campo `OP` en `TablaVinculadaUNION` no contenga errores graves.**
 
-3. Comunicar al equipo:
+### 🔗 Conexión Power BI
 
-> "Usen la vista `vista_MedoroResumen7_Final_2025` como origen. Contiene los datos corregidos, validados, con tiempos reales, secuencia y sacabocado. Ya no hace falta usar Excel ni manipular manualmente las tablas originales."
+* Usar la vista `vista_MedoroResumen7_Final_2025` como fuente principal.
+* Importar en modo `Import` (no `DirectQuery`, salvo que sea necesario).
+* Crear relaciones si hay otras tablas como calendario.
 
----
+### 💪 Beneficio para la empresa
 
-## 🚀 Impacto
-
-* Eliminación de errores manuales
-* Reducción de tiempos de análisis
-* Validación completa con datos reales (OT 14620, 14626)
-* Reutilizable por toda la empresa sin tocar datos originales
+* Datos validados contra controles manuales.
+* 100% reutilizable.
+* Compatible con cualquier otro reporte futuro.
 
 ---
 
-Cualquier modificación o mejora posterior (por ejemplo, incorporar otras máquinas) puede partir directamente desde esta arquitectura limpia.
+## 🔀 Estado actual del proyecto
+
+* [x] Vistas limpias creadas
+* [x] Datos validados con José (ej: OT 14620)
+* [x] Saccod1 conectado correctamente
+* [x] Medidas DAX definidas
+* [ ] Dashboards Power BI en construcción
 
 ---
 
-📅 Proyecto creado por Marcelo F. López - 2025
+✅ **Próximos pasos**
+
+* Crear visualizaciones Power BI con tarjetas y gráficos (como en Medoro 5 y 6).
+* Exportar versión portable para José con Excel.
+* Publicar video demo y documento final en GitHub.
+
+---
+
+© Marcelo López Castro • Proyecto Medoro 7 • Julio 2025
